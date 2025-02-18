@@ -10,17 +10,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from transformers import GenerationMixin
 from transformers.utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
 )
 from transformers.modeling_outputs import ModelOutput
 from transformers.configuration_utils import PretrainedConfig
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    PreTrainedModel
-)
+from transformers import AutoConfig, AutoModelForCausalLM, PreTrainedModel
 from transformers.utils import logging
 
 from .siglip_vit import VisionTransformer
@@ -56,10 +53,17 @@ class MlpProjector(nn.Module):
         elif cfg.projector_type == "downsample_mlp_gelu":
             mlp_depth = cfg.depth
             mlp_ratio = cfg.mlp_ratio
-            modules = [nn.Linear(cfg.input_dim * cfg.downsample_ratio * cfg.downsample_ratio, cfg.n_embed * mlp_ratio)]
+            modules = [
+                nn.Linear(
+                    cfg.input_dim * cfg.downsample_ratio * cfg.downsample_ratio,
+                    cfg.n_embed * mlp_ratio,
+                )
+            ]
             for _ in range(1, mlp_depth - 1):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed * mlp_ratio))
+                modules.append(
+                    nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed * mlp_ratio)
+                )
             modules.append(nn.GELU())
             modules.append(nn.Linear(cfg.n_embed * mlp_ratio, cfg.n_embed))
             modules = nn.Sequential(*modules)
@@ -75,14 +79,16 @@ class MlpProjector(nn.Module):
     def forward(self, x):
         if self.cfg.token_pooling:
             batch_size, wxh, channels = x.shape
-            w = h = int(wxh ** 0.5)
+            w = h = int(wxh**0.5)
             x = x.view(batch_size, w, h, channels)
             x = x.permute(0, 3, 1, 2)
             # import ipdb; ipdb.set_trace()
             patches = x.unfold(2, 2, 2).unfold(3, 2, 2)
             batch_size, channels, h_patches, w_patches, _, _ = patches.size()
             # 在通道维度上拼接
-            patches = patches.contiguous().view(batch_size, channels, h_patches * w_patches, -1)
+            patches = patches.contiguous().view(
+                batch_size, channels, h_patches * w_patches, -1
+            )
 
             # 通过线性层
             patches = patches.permute(0, 2, 1, 3).contiguous()
@@ -90,7 +96,7 @@ class MlpProjector(nn.Module):
 
             x = self.token_pooling_layer(patches)
 
-        elif self.cfg.projector_type == 'downsample_mlp_gelu':
+        elif self.cfg.projector_type == "downsample_mlp_gelu":
             bs, hw, input_dim = x.shape
             h = w = int((hw) ** 0.5)
 
@@ -105,8 +111,12 @@ class MlpProjector(nn.Module):
 
             """4 to 1 concat"""
             x = x.permute(0, 3, 1, 2)  # B, C, H, W
-            x = F.unfold(x, kernel_size=self.cfg.downsample_ratio, stride=self.cfg.downsample_ratio,
-                         padding=0)  # B, C*4, HW // 4
+            x = F.unfold(
+                x,
+                kernel_size=self.cfg.downsample_ratio,
+                stride=self.cfg.downsample_ratio,
+                padding=0,
+            )  # B, C*4, HW // 4
             x = x.permute(0, 2, 1)
 
         return self.layers(x)
@@ -132,20 +142,20 @@ class VisionEncoderConfig(PretrainedConfig):
     num_recomputing_layers: int = 0
 
     def __init__(
-            self,
-            model_name: str = "siglip_large_patch16_384",
-            image_size: int = 384,
-            patch_size: int = 16,
-            width: int = 1024,
-            layers: int = 24,
-            heads: int = 16,
-            mlp_ratio: int = 4,
-            global_pool: str = "map",
-            ignore_head: bool = True,
-            class_token: bool = False,
-            num_classes: int = 0,
-            use_checkpoint: bool = False,
-            **kwargs
+        self,
+        model_name: str = "siglip_large_patch16_384",
+        image_size: int = 384,
+        patch_size: int = 16,
+        width: int = 1024,
+        layers: int = 24,
+        heads: int = 16,
+        mlp_ratio: int = 4,
+        global_pool: str = "map",
+        ignore_head: bool = True,
+        class_token: bool = False,
+        num_classes: int = 0,
+        use_checkpoint: bool = False,
+        **kwargs,
     ):
         self.model_name = model_name
         self.image_size = image_size
@@ -174,14 +184,14 @@ class MlpProjectorConfig(PretrainedConfig):
     token_pooling: bool = False
 
     def __init__(
-            self,
-            projector_type: str = "downsample_mlp_gelu",
-            input_dim: int = 1152,
-            n_embed: int = 2048,
-            depth: int = 2,
-            mlp_ratio: int = 1,
-            downsample_ratio: int = 2,
-            **kwargs
+        self,
+        projector_type: str = "downsample_mlp_gelu",
+        input_dim: int = 1152,
+        n_embed: int = 2048,
+        depth: int = 2,
+        mlp_ratio: int = 1,
+        downsample_ratio: int = 2,
+        **kwargs,
     ):
         self.projector_type = projector_type
         self.input_dim = input_dim
@@ -243,11 +253,11 @@ class DeepseekVLV2Config(PretrainedConfig):
     candidate_resolutions: Tuple[Tuple[int, int]] = ((384, 384),)
 
     def __init__(
-            self,
-            tile_tag: str = "tile_tag",
-            global_view_pos: str = "head",
-            candidate_resolutions: Tuple[Tuple[int, int]] = ((384, 384),),
-            **kwargs
+        self,
+        tile_tag: str = "tile_tag",
+        global_view_pos: str = "head",
+        candidate_resolutions: Tuple[Tuple[int, int]] = ((384, 384),),
+        **kwargs,
     ):
         super().__init__(**kwargs)
 
@@ -275,7 +285,7 @@ class DeepseekVLV2PreTrainedModel(PreTrainedModel):
     _skip_keys_device_placement = "past_key_values"
 
 
-class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
+class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
 
     def __init__(self, config: DeepseekVLV2Config):
         super().__init__(config)
@@ -297,7 +307,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
             weight_init=vision_config.weight_init,
             num_classes=0,
             deterministic=vision_config.deterministic,
-            num_recomputing_layers=vision_config.num_recomputing_layers
+            num_recomputing_layers=vision_config.num_recomputing_layers,
         )
 
         # ----------- vl projector ------------
@@ -310,36 +320,46 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
         self.global_view_pos = config.global_view_pos
 
         # 用于format image token sequence的特殊token
-        embed_std = 1 / torch.sqrt(torch.tensor(projector_config.n_embed, dtype=torch.float32))
+        embed_std = 1 / torch.sqrt(
+            torch.tensor(projector_config.n_embed, dtype=torch.float32)
+        )
         if self.tile_tag == "2D":
             # <|view_separator|>, <|\n|>
-            self.image_newline = nn.Parameter(torch.randn(projector_config.n_embed) * embed_std)
+            self.image_newline = nn.Parameter(
+                torch.randn(projector_config.n_embed) * embed_std
+            )
             # fix the typo: view_seperater
-            self.view_seperator = nn.Parameter(torch.randn(projector_config.n_embed) * embed_std)
+            self.view_seperator = nn.Parameter(
+                torch.randn(projector_config.n_embed) * embed_std
+            )
         elif self.tile_tag == "1D":
             # <|tile_x|>, <|tile_global|>
             candidate_resolutions = config.candidate_resolutions
             if len(candidate_resolutions) == 0:
                 raise ValueError(
-                    f"len(candidate_resolutions) should be larger than 0, but got {len(candidate_resolutions)}")
+                    f"len(candidate_resolutions) should be larger than 0, but got {len(candidate_resolutions)}"
+                )
             tile_variants_num = len(candidate_resolutions)
             self.tile_indicators = nn.Parameter(
-                torch.randn(size=(tile_variants_num + 1, config.aligner.params.n_embed)) * embed_std
+                torch.randn(size=(tile_variants_num + 1, config.aligner.params.n_embed))
+                * embed_std
             )
         else:
-            raise ValueError(f"tile tag should be either 1D or 2D, but got {self.tile_tag}")
+            raise ValueError(
+                f"tile tag should be either 1D or 2D, but got {self.tile_tag}"
+            )
 
         # ----------- language model ------------
         language_config = config.language_config
         self.language = DeepseekV2ForCausalLM(language_config)
 
     def prepare_inputs_embeds(
-            self,
-            input_ids: torch.LongTensor,
-            images: Optional[torch.FloatTensor] = None,
-            images_seq_mask: Optional[torch.LongTensor] = None,
-            images_spatial_crop: Optional[torch.LongTensor] = None,
-            **ignore_kwargs
+        self,
+        input_ids: torch.LongTensor,
+        images: Optional[torch.FloatTensor] = None,
+        images_seq_mask: Optional[torch.LongTensor] = None,
+        images_spatial_crop: Optional[torch.LongTensor] = None,
+        **ignore_kwargs,
     ):
         """
 
@@ -364,9 +384,9 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                 num_width_tiles, num_height_tiles = images_spatial_crop[idx, jdx]
                 if num_width_tiles == 0 or num_height_tiles == 0:
                     break
-                batch_num_tiles[idx] += (1 + num_width_tiles * num_height_tiles)
+                batch_num_tiles[idx] += 1 + num_width_tiles * num_height_tiles
 
-            total_tiles.append(images[idx, :batch_num_tiles[idx]])
+            total_tiles.append(images[idx, : batch_num_tiles[idx]])
 
         # [batch_all_tiles, 3, height, width]
         total_tiles = torch.cat(total_tiles, dim=0)
@@ -380,7 +400,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
         # [batch_all_tiles, hw, D]
         images_embeds = self.projector(images_feature)
         _, hw, n_dim = images_embeds.shape
-        h = w = int(hw ** 0.5)
+        h = w = int(hw**0.5)
 
         # put image tokens into the input_embeds, [b, T, D]
         input_embeds = self.language.get_input_embeddings()(input_ids)
@@ -402,7 +422,9 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                 global_features = images_embeds[tile_index]
 
                 # [num_height_tiles * num_width_tiles, hw, D]
-                local_features = images_embeds[tile_index + 1: tile_index + 1 + num_tiles_in_image]
+                local_features = images_embeds[
+                    tile_index + 1 : tile_index + 1 + num_tiles_in_image
+                ]
 
                 tile_index += num_tiles_in_image + 1
 
@@ -415,7 +437,9 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                     # [D]     -> [h, 1, D]
                     new_lines_in_global = repeat(self.image_newline, "d -> h 1 d", h=h)
                     # cat([h, w, D], [h, 1, D], dim=1) -> [h, w + 1, D]
-                    global_features = torch.cat([global_features, new_lines_in_global], dim=1)
+                    global_features = torch.cat(
+                        [global_features, new_lines_in_global], dim=1
+                    )
                     # [h, w + 1, D] -> [h * (w + 1), D]
                     global_features = global_features.view(-1, n_dim)
 
@@ -427,19 +451,18 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                         th=num_height_tiles,
                         tw=num_width_tiles,
                         h=h,
-                        w=w
+                        w=w,
                     )
 
                     # [D] -> [num_height_tiles * h, 1, D]
                     new_lines_in_local = repeat(
-                        self.image_newline,
-                        "d -> (th h) 1 d",
-                        th=num_height_tiles,
-                        h=h
+                        self.image_newline, "d -> (th h) 1 d", th=num_height_tiles, h=h
                     )
 
                     # [num_height_tiles * h, num_width_tiles * w + 1, D]
-                    local_features = torch.cat([local_features, new_lines_in_local], dim=1)
+                    local_features = torch.cat(
+                        [local_features, new_lines_in_local], dim=1
+                    )
 
                     # [num_height_tiles * h, num_width_tiles * w + 1, D]
                     #   --> [(num_height_tiles * h) * (num_width_tiles * w + 1), D]
@@ -448,10 +471,22 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                     # ----------------- merge global and local tiles -----------------
                     if self.global_view_pos == "head":
                         global_local_features = torch.cat(
-                            [global_features, self.view_seperator[None, :], local_features], dim=0)
+                            [
+                                global_features,
+                                self.view_seperator[None, :],
+                                local_features,
+                            ],
+                            dim=0,
+                        )
                     else:
                         global_local_features = torch.cat(
-                            [local_features, self.view_seperator[None, :], global_features], dim=0)
+                            [
+                                local_features,
+                                self.view_seperator[None, :],
+                                global_features,
+                            ],
+                            dim=0,
+                        )
 
                 else:
                     # abandoned，实际上不会走这个逻辑
@@ -459,34 +494,47 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                         [self.tile_indicators[0:1], global_features], dim=0
                     )
                     local_features = torch.cat(
-                        [self.tile_indicators[1:num_tiles_in_image + 1].unsqueeze(1), local_features], dim=1
+                        [
+                            self.tile_indicators[1 : num_tiles_in_image + 1].unsqueeze(
+                                1
+                            ),
+                            local_features,
+                        ],
+                        dim=1,
                     )
-                    local_features = rearrange(local_features, 'crop_num hw d -> (crop_num hw) d')
+                    local_features = rearrange(
+                        local_features, "crop_num hw d -> (crop_num hw) d"
+                    )
 
                     if self.global_view_pos == "head":
-                        global_local_features = torch.cat([global_features, local_features], dim=0)
+                        global_local_features = torch.cat(
+                            [global_features, local_features], dim=0
+                        )
                     else:
-                        global_local_features = torch.cat([local_features, global_features], dim=0)
+                        global_local_features = torch.cat(
+                            [local_features, global_features], dim=0
+                        )
 
                 images_in_this_batch.append(global_local_features)
 
             if len(images_in_this_batch) > 0:
                 images_in_this_batch = torch.cat(images_in_this_batch, dim=0)
-                input_embeds[idx].masked_scatter_(images_seq_mask[idx].unsqueeze(-1), images_in_this_batch)
+                input_embeds[idx].masked_scatter_(
+                    images_seq_mask[idx].unsqueeze(-1), images_in_this_batch
+                )
 
         return input_embeds
 
     @torch.no_grad()
     def incremental_prefilling(
-            self,
-            input_ids: Optional[torch.LongTensor] = None,
-            attention_mask: Optional[torch.Tensor] = None,
-            inputs_embeds: Optional[torch.FloatTensor] = None,
-
-            images: Optional[torch.FloatTensor] = None,
-            images_seq_mask: Optional[torch.LongTensor] = None,
-            images_spatial_crop: Optional[torch.LongTensor] = None,
-            chunk_size: int = 1024
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        images: Optional[torch.FloatTensor] = None,
+        images_seq_mask: Optional[torch.LongTensor] = None,
+        images_spatial_crop: Optional[torch.LongTensor] = None,
+        chunk_size: int = 1024,
     ):
         if inputs_embeds is None:
             inputs_embeds = self.prepare_inputs_embeds(
@@ -513,8 +561,8 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
         for i in range(0, prefilling_len, chunk_size):
             chunk_start = i
             chunk_end = min(i + chunk_size, prefilling_len)
-            chunk_inputs_embeds = inputs_embeds[:, chunk_start: chunk_end]
-            chunk_attention_mask = attention_mask[:, 0: chunk_end]
+            chunk_inputs_embeds = inputs_embeds[:, chunk_start:chunk_end]
+            chunk_attention_mask = attention_mask[:, 0:chunk_end]
             # print(f"start = {chunk_start}, end = {chunk_end}, prefilling_len = {prefilling_len}, seq_len = {seq_len}")
 
             # compute position_ids
@@ -523,9 +571,11 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
                     chunk_start,
                     chunk_end,
                     dtype=torch.long,
-                    device=inputs_embeds.device
+                    device=inputs_embeds.device,
                 ).unsqueeze(0)
-                past_key_values = self._move_past_key_values_to_gpu(past_key_values, inputs_embeds.device)
+                past_key_values = self._move_past_key_values_to_gpu(
+                    past_key_values, inputs_embeds.device
+                )
             else:
                 position_ids = None
 
@@ -549,32 +599,29 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
         for layer_past in past_key_values:
             prefilling_key_values.append(
                 (
-                    layer_past[0][:, :, 0: prefilling_len, ...].to(inputs_embeds.device),
-                    layer_past[1][:, :, 0: prefilling_len, ...].to(inputs_embeds.device),
+                    layer_past[0][:, :, 0:prefilling_len, ...].to(inputs_embeds.device),
+                    layer_past[1][:, :, 0:prefilling_len, ...].to(inputs_embeds.device),
                 )
             )
 
         return inputs_embeds, prefilling_key_values
 
     def forward(
-            self,
-            input_ids: Optional[torch.LongTensor] = None,
-
-            attention_mask: Optional[torch.Tensor] = None,
-            position_ids: Optional[torch.LongTensor] = None,
-            past_key_values: Optional[List[torch.FloatTensor]] = None,
-            inputs_embeds: Optional[torch.FloatTensor] = None,
-
-            images: Optional[torch.FloatTensor] = None,
-            images_seq_mask: Optional[torch.LongTensor] = None,
-            images_spatial_crop: Optional[torch.LongTensor] = None,
-
-            labels: Optional[torch.LongTensor] = None,
-            use_cache: Optional[bool] = None,
-            output_attentions: Optional[bool] = None,
-            output_hidden_states: Optional[bool] = None,
-            return_dict: Optional[bool] = None,
-            cache_position: Optional[torch.LongTensor] = None,
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        images: Optional[torch.FloatTensor] = None,
+        images_seq_mask: Optional[torch.LongTensor] = None,
+        images_spatial_crop: Optional[torch.LongTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        cache_position: Optional[torch.LongTensor] = None,
     ):
 
         output_attentions = (
@@ -615,7 +662,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            cache_position=cache_position
+            cache_position=cache_position,
         )
 
         return outputs
@@ -640,22 +687,19 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel):
         return tuple(tuple(t.to(device) for t in layer) for layer in past_key_values)
 
     def prepare_inputs_for_generation(
-            self,
-            input_ids,
-            past_key_values=None,
-            inputs_embeds=None,
-
-            images: Optional[torch.FloatTensor] = None,
-            images_seq_mask: Optional[torch.LongTensor] = None,
-            images_spatial_crop: Optional[torch.LongTensor] = None,
-
-            attention_mask=None,
-            cache_position=None,
-
-            pixel_values=None,
-            image_sizes=None,
-            num_logits_to_keep=None,
-            **kwargs,
+        self,
+        input_ids,
+        past_key_values=None,
+        inputs_embeds=None,
+        images: Optional[torch.FloatTensor] = None,
+        images_seq_mask: Optional[torch.LongTensor] = None,
+        images_spatial_crop: Optional[torch.LongTensor] = None,
+        attention_mask=None,
+        cache_position=None,
+        pixel_values=None,
+        image_sizes=None,
+        num_logits_to_keep=None,
+        **kwargs,
     ):
         # Overwritten -- in specific circumstances we don't want to forward image inputs to the model
         model_inputs = self.language.prepare_inputs_for_generation(

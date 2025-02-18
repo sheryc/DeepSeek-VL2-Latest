@@ -40,11 +40,18 @@ def select_best_resolution(image_size, candidate_resolutions):
 
     for width, height in candidate_resolutions:
         scale = min(width / original_width, height / original_height)
-        downscaled_width, downscaled_height = int(original_width * scale), int(original_height * scale)
-        effective_resolution = min(downscaled_width * downscaled_height, original_width * original_height)
+        downscaled_width, downscaled_height = int(original_width * scale), int(
+            original_height * scale
+        )
+        effective_resolution = min(
+            downscaled_width * downscaled_height, original_width * original_height
+        )
         wasted_resolution = (width * height) - effective_resolution
 
-        if effective_resolution > max_effective_resolution or (effective_resolution == max_effective_resolution and wasted_resolution < min_wasted_resolution):
+        if effective_resolution > max_effective_resolution or (
+            effective_resolution == max_effective_resolution
+            and wasted_resolution < min_wasted_resolution
+        ):
             max_effective_resolution = effective_resolution
             min_wasted_resolution = wasted_resolution
             best_fit = (width, height)
@@ -101,18 +108,16 @@ class BatchCollateOutput(DictOutput):
 
 class ImageTransform(object):
     def __init__(
-            self,
-            mean: Optional[Tuple[float, float, float]] = (0.5, 0.5, 0.5),
-            std: Optional[Tuple[float, float, float]] = (0.5, 0.5, 0.5),
-            normalize: bool = True
+        self,
+        mean: Optional[Tuple[float, float, float]] = (0.5, 0.5, 0.5),
+        std: Optional[Tuple[float, float, float]] = (0.5, 0.5, 0.5),
+        normalize: bool = True,
     ):
         self.mean = mean
         self.std = std
         self.normalize = normalize
 
-        transform_pipelines = [
-            T.ToTensor()
-        ]
+        transform_pipelines = [T.ToTensor()]
 
         if normalize:
             transform_pipelines.append(T.Normalize(mean, std))
@@ -124,27 +129,26 @@ class ImageTransform(object):
         return x
 
 
-
 class DeepseekVLV2Processor(ProcessorMixin):
     tokenizer_class = ("LlamaTokenizer", "LlamaTokenizerFast")
     attributes = ["tokenizer"]
 
     def __init__(
-            self,
-            tokenizer: LlamaTokenizerFast,
-            candidate_resolutions: Tuple[Tuple[int, int]],
-            patch_size: int,
-            downsample_ratio: int,
-            image_mean: Tuple[float, float, float] = (0.5, 0.5, 0.5),
-            image_std: Tuple[float, float, float] = (0.5, 0.5, 0.5),
-            normalize: bool = True,
-            image_token: str = "<image>",
-            pad_token: str = "<｜▁pad▁｜>",
-            add_special_token: bool = False,
-            sft_format: str = "deepseek",
-            mask_prompt: bool = True,
-            ignore_id: int = -100,
-            **kwargs,
+        self,
+        tokenizer: LlamaTokenizerFast,
+        candidate_resolutions: Tuple[Tuple[int, int]],
+        patch_size: int,
+        downsample_ratio: int,
+        image_mean: Tuple[float, float, float] = (0.5, 0.5, 0.5),
+        image_std: Tuple[float, float, float] = (0.5, 0.5, 0.5),
+        normalize: bool = True,
+        image_token: str = "<image>",
+        pad_token: str = "<｜▁pad▁｜>",
+        add_special_token: bool = False,
+        sft_format: str = "deepseek",
+        mask_prompt: bool = True,
+        ignore_id: int = -100,
+        **kwargs,
     ):
 
         self.candidate_resolutions = candidate_resolutions
@@ -155,15 +159,19 @@ class DeepseekVLV2Processor(ProcessorMixin):
         self.normalize = normalize
         self.downsample_ratio = downsample_ratio
 
-        self.image_transform = ImageTransform(mean=image_mean, std=image_std, normalize=normalize)
+        self.image_transform = ImageTransform(
+            mean=image_mean, std=image_std, normalize=normalize
+        )
         self.tokenizer = tokenizer
-        self.tokenizer.padding_side = 'left'  # must set this，padding side with make a difference in batch inference
+        self.tokenizer.padding_side = "left"  # must set this，padding side with make a difference in batch inference
 
         # add the pad_token as special token to use 'tokenizer.pad_token' and 'tokenizer.pad_token_id'
         if tokenizer.pad_token is None:
-            self.tokenizer.add_special_tokens({'pad_token': pad_token})
-        print(f"Add pad token = ['{pad_token}'] to the tokenizer\n"
-              f"{pad_token}:{tokenizer.encode(pad_token, add_special_tokens=False)[0]}")
+            self.tokenizer.add_special_tokens({"pad_token": pad_token})
+        print(
+            f"Add pad token = ['{pad_token}'] to the tokenizer\n"
+            f"{pad_token}:{tokenizer.encode(pad_token, add_special_tokens=False)[0]}"
+        )
 
         # add image token
         image_token_id = self.tokenizer.vocab.get(image_token)
@@ -172,28 +180,34 @@ class DeepseekVLV2Processor(ProcessorMixin):
             special_tokens_dict = {"additional_special_tokens": special_tokens}
             self.tokenizer.add_special_tokens(special_tokens_dict)
         self.image_token_id = self.tokenizer.vocab.get(image_token)
-        print(f"Add image token = ['{image_token}'] to the tokenizer\n"
-              f"{image_token}:{tokenizer.encode(image_token, add_special_tokens=False)[0]}")
+        print(
+            f"Add image token = ['{image_token}'] to the tokenizer\n"
+            f"{image_token}:{tokenizer.encode(image_token, add_special_tokens=False)[0]}"
+        )
 
         # add five special tokens for grounding-related tasks
         # <|ref|>, <|/ref|>, <|det|>, <|/det|>, <|grounding|>
-        special_tokens = ['<|ref|>', '<|/ref|>', '<|det|>', '<|/det|>', '<|grounding|>']
+        special_tokens = ["<|ref|>", "<|/ref|>", "<|det|>", "<|/det|>", "<|grounding|>"]
         special_tokens_dict = {"additional_special_tokens": special_tokens}
         self.tokenizer.add_special_tokens(special_tokens_dict)
-        print(f"Add grounding-related tokens = {special_tokens} to the tokenizer with input_ids\n"
-              f"<|ref|>:{tokenizer.encode('<|ref|>', add_special_tokens=False)[0]}\n"
-              f"<|/ref|>:{tokenizer.encode('<|/ref|>', add_special_tokens=False)[0]}\n"
-              f"<|det|>:{tokenizer.encode('<|det|>', add_special_tokens=False)[0]}\n"
-              f"<|/det|>:{tokenizer.encode('<|/det|>', add_special_tokens=False)[0]}\n"
-              f"<|grounding|>:{tokenizer.encode('<|grounding|>', add_special_tokens=False)[0]}")
+        print(
+            f"Add grounding-related tokens = {special_tokens} to the tokenizer with input_ids\n"
+            f"<|ref|>:{tokenizer.encode('<|ref|>', add_special_tokens=False)[0]}\n"
+            f"<|/ref|>:{tokenizer.encode('<|/ref|>', add_special_tokens=False)[0]}\n"
+            f"<|det|>:{tokenizer.encode('<|det|>', add_special_tokens=False)[0]}\n"
+            f"<|/det|>:{tokenizer.encode('<|/det|>', add_special_tokens=False)[0]}\n"
+            f"<|grounding|>:{tokenizer.encode('<|grounding|>', add_special_tokens=False)[0]}"
+        )
 
         # add special tokens for SFT data
         special_tokens = ["<|User|>", "<|Assistant|>"]
         special_tokens_dict = {"additional_special_tokens": special_tokens}
         self.tokenizer.add_special_tokens(special_tokens_dict)
-        print(f"Add chat tokens = {special_tokens} to the tokenizer with input_ids\n"
-              f"<|User|>:{tokenizer.encode('<|User|>', add_special_tokens=False)[0]}\n"
-              f"<|Assistant|>:{tokenizer.encode('<|Assistant|>', add_special_tokens=False)[0]}\n")
+        print(
+            f"Add chat tokens = {special_tokens} to the tokenizer with input_ids\n"
+            f"<|User|>:{tokenizer.encode('<|User|>', add_special_tokens=False)[0]}\n"
+            f"<|Assistant|>:{tokenizer.encode('<|Assistant|>', add_special_tokens=False)[0]}\n"
+        )
 
         self.image_token = image_token
         self.pad_token = pad_token
@@ -212,10 +226,10 @@ class DeepseekVLV2Processor(ProcessorMixin):
         return conv
 
     def format_messages(
-            self,
-            conversations: List[Dict[str, str]],
-            sft_format: str = "deepseek",
-            system_prompt: str = "",
+        self,
+        conversations: List[Dict[str, str]],
+        sft_format: str = "deepseek",
+        system_prompt: str = "",
     ):
         """
         Applies the SFT template to conversation.
@@ -258,19 +272,24 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 images_seq_mask += [False]
                 conv.system_message = conv_system_message
             else:
-                conv.system_message = ''
+                conv.system_message = ""
 
-            if message['role'] == conv.roles[0] or message['role'] == "user":
+            if message["role"] == conv.roles[0] or message["role"] == "user":
                 conv.reset_message()
-                conv.append_message(conv.roles[0], str(message['content']).strip())
-                conv.append_message(conv.roles[1], '')
+                conv.append_message(conv.roles[0], str(message["content"]).strip())
+                conv.append_message(conv.roles[1], "")
                 formatted_question = conv.get_prompt()
-                tokenized_str, images, seq_mask, spatial_crop, n_image_tokens = self.tokenize_with_images(
-                    formatted_question,
-                    pil_images[image_index: image_index + formatted_question.count(self.image_token)],
-                    bos=False,
-                    eos=False,
-                    cropping=len(pil_images) <= 2
+                tokenized_str, images, seq_mask, spatial_crop, n_image_tokens = (
+                    self.tokenize_with_images(
+                        formatted_question,
+                        pil_images[
+                            image_index : image_index
+                            + formatted_question.count(self.image_token)
+                        ],
+                        bos=False,
+                        eos=False,
+                        cropping=len(pil_images) <= 2,
+                    )
                 )
                 image_index += formatted_question.count(self.image_token)
 
@@ -284,25 +303,31 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 images_spatial_crop += spatial_crop
                 num_image_tokens += n_image_tokens
 
-            elif message['role'] == conv.roles[1] or message['role'] == "assistant":
-                formatted_answer = message['content'].strip()
-                assert formatted_answer.count(
-                    self.image_token) == 0, f"there should be no {self.image_token} in the assistant's reply, but got {messages}"
-                tokenized_str, images, seq_mask, spatial_crop, n_image_tokens = self.tokenize_with_images(
-                    formatted_answer,
-                    [],
-                    bos=False,
-                    eos=True,
-                    cropping=len(pil_images) <= 2)
+            elif message["role"] == conv.roles[1] or message["role"] == "assistant":
+                formatted_answer = message["content"].strip()
+                assert (
+                    formatted_answer.count(self.image_token) == 0
+                ), f"there should be no {self.image_token} in the assistant's reply, but got {messages}"
+                tokenized_str, images, seq_mask, spatial_crop, n_image_tokens = (
+                    self.tokenize_with_images(
+                        formatted_answer,
+                        [],
+                        bos=False,
+                        eos=True,
+                        cropping=len(pil_images) <= 2,
+                    )
+                )
 
                 tokenized_data += tokenized_str
                 masked_tokenized_data += tokenized_str
                 images_seq_mask += seq_mask
 
-            elif message['role'] == 'system' or message['role'] == 'deepseekapi-sys':
+            elif message["role"] == "system" or message["role"] == "deepseekapi-sys":
                 # 如果message里面有system，那就只允许出现在message的第一句，同时conv原本的system就会失效
-                assert idx == 0, 'system information should only exist in the begining of the conversation'
-                formatted_system = message['content'].strip()
+                assert (
+                    idx == 0
+                ), "system information should only exist in the begining of the conversation"
+                formatted_system = message["content"].strip()
                 tokenized_str = self.encode(formatted_system, bos=False, eos=False)
                 tokenized_data += tokenized_str
                 if self.mask_prompt:
@@ -316,16 +341,26 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 assert False, f"Unknown role: {message['role']}"
 
         assert len(tokenized_data) == len(
-            images_seq_mask), f"format_messages_v2: tokenized_str's length {len(tokenized_str)} is not equal to imags_seq_mask's length {len(images_seq_mask)}"
-        assert len(images_spatial_crop) == len(num_image_tokens), f"image number should be compatible"
+            images_seq_mask
+        ), f"format_messages_v2: tokenized_str's length {len(tokenized_str)} is not equal to imags_seq_mask's length {len(images_seq_mask)}"
+        assert len(images_spatial_crop) == len(
+            num_image_tokens
+        ), f"image number should be compatible"
 
-        return tokenized_data, masked_tokenized_data, images_list, images_seq_mask, images_spatial_crop, num_image_tokens
+        return (
+            tokenized_data,
+            masked_tokenized_data,
+            images_list,
+            images_seq_mask,
+            images_spatial_crop,
+            num_image_tokens,
+        )
 
     def format_prompts(
-            self,
-            prompts: str,
-            sft_format: str = "deepseek",
-            system_prompt: str = "",
+        self,
+        prompts: str,
+        sft_format: str = "deepseek",
+        system_prompt: str = "",
     ):
         """
         Applies the SFT template to prompts.
@@ -374,14 +409,14 @@ class DeepseekVLV2Processor(ProcessorMixin):
         return self.tokenizer.decode(t, **kwargs)
 
     def process_one(
-            self,
-            prompt: str = None,
-            conversations: List[Dict[str, str]] = None,
-            images: List[Image.Image] = None,
-            apply_sft_format: bool = False,
-            inference_mode: bool = True,
-            system_prompt: str = "",
-            **kwargs,
+        self,
+        prompt: str = None,
+        conversations: List[Dict[str, str]] = None,
+        images: List[Image.Image] = None,
+        apply_sft_format: bool = False,
+        inference_mode: bool = True,
+        system_prompt: str = "",
+        **kwargs,
     ):
         """
 
@@ -405,7 +440,7 @@ class DeepseekVLV2Processor(ProcessorMixin):
         """
 
         assert (
-                prompt is None or conversations is None
+            prompt is None or conversations is None
         ), "prompt and conversations cannot be used at the same time."
 
         if prompt is None:
@@ -415,19 +450,32 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 sft_format=self.sft_format,
                 system_prompt=system_prompt,
             )
-            tokenized_str, masked_tokenized_str, images_list, images_seq_mask, images_spatial_crop, num_image_tokens = self.format_messages_v2(
-                conversations, images)
+            (
+                tokenized_str,
+                masked_tokenized_str,
+                images_list,
+                images_seq_mask,
+                images_spatial_crop,
+                num_image_tokens,
+            ) = self.format_messages_v2(conversations, images)
         else:
             if apply_sft_format:
                 sft_format = self.format_prompts(
                     prompts=prompt,
                     sft_format=self.sft_format,
-                    system_prompt=system_prompt
+                    system_prompt=system_prompt,
                 )
             else:
                 sft_format = prompt
-            tokenized_str, images_list, images_seq_mask, images_spatial_crop, num_image_tokens = self.tokenize_with_images(
-                sft_format, images, bos=True, eos=True, cropping=len(images) <= 2)
+            (
+                tokenized_str,
+                images_list,
+                images_seq_mask,
+                images_spatial_crop,
+                num_image_tokens,
+            ) = self.tokenize_with_images(
+                sft_format, images, bos=True, eos=True, cropping=len(images) <= 2
+            )
             masked_tokenized_str = []
             for token_index in tokenized_str:
                 if token_index != self.image_token_id:
@@ -435,16 +483,21 @@ class DeepseekVLV2Processor(ProcessorMixin):
                 else:
                     masked_tokenized_str.append(self.ignore_id)
 
-        assert len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str), \
-            (f"tokenized_str's length {len(tokenized_str)}, input_ids' length {len(masked_tokenized_str)}, "
-             f"imags_seq_mask's length {len(images_seq_mask)}, are not equal")
+        assert (
+            len(tokenized_str) == len(images_seq_mask) == len(masked_tokenized_str)
+        ), (
+            f"tokenized_str's length {len(tokenized_str)}, input_ids' length {len(masked_tokenized_str)}, "
+            f"imags_seq_mask's length {len(images_seq_mask)}, are not equal"
+        )
 
         input_ids = torch.LongTensor(tokenized_str)
         target_ids = torch.LongTensor(masked_tokenized_str)
         images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
 
         # set input_ids < 0 | input_ids == self.image_token_id as ignore_id
-        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = self.ignore_id
+        target_ids[(input_ids < 0) | (input_ids == self.image_token_id)] = (
+            self.ignore_id
+        )
         input_ids[input_ids < 0] = self.pad_id
 
         if inference_mode:
@@ -468,22 +521,22 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images=images,
             images_seq_mask=images_seq_mask,
             images_spatial_crop=images_spatial_crop,
-            num_image_tokens=num_image_tokens
+            num_image_tokens=num_image_tokens,
         )
 
         return prepare
 
     def __call__(
-            self,
-            *,
-            prompt: str = None,
-            conversations: List[Dict[str, str]] = None,
-            images: List[Image.Image] = None,
-            apply_sft_format: bool = False,
-            force_batchify: bool = True,
-            inference_mode: bool = True,
-            system_prompt: str = "",
-            **kwargs,
+        self,
+        *,
+        prompt: str = None,
+        conversations: List[Dict[str, str]] = None,
+        images: List[Image.Image] = None,
+        apply_sft_format: bool = False,
+        force_batchify: bool = True,
+        inference_mode: bool = True,
+        system_prompt: str = "",
+        **kwargs,
     ):
         """
 
@@ -512,7 +565,7 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images=images,
             apply_sft_format=apply_sft_format,
             inference_mode=inference_mode,
-            system_prompt=system_prompt
+            system_prompt=system_prompt,
         )
 
         if force_batchify:
@@ -521,12 +574,12 @@ class DeepseekVLV2Processor(ProcessorMixin):
         return prepare
 
     def tokenize_with_images(
-            self,
-            conversation: str,
-            images: List[Image.Image],
-            bos: bool = True,
-            eos: bool = True,
-            cropping: bool = True,
+        self,
+        conversation: str,
+        images: List[Image.Image],
+        bos: bool = True,
+        eos: bool = True,
+        cropping: bool = True,
     ):
         """Tokenize text with <image> tags."""
         assert conversation.count(self.image_token) == len(images)
@@ -542,36 +595,58 @@ class DeepseekVLV2Processor(ProcessorMixin):
 
             """select best resolution for anyres"""
             if cropping:
-                best_width, best_height = select_best_resolution(image.size, self.candidate_resolutions)
+                best_width, best_height = select_best_resolution(
+                    image.size, self.candidate_resolutions
+                )
             else:
                 best_width, best_height = self.image_size, self.image_size
             # print(image.size, (best_width, best_height)) # check the select_best_resolutions func
 
             """process the global view"""
-            global_view = ImageOps.pad(image, (self.image_size, self.image_size),
-                                       color=tuple(int(x * 255) for x in self.image_transform.mean))
+            global_view = ImageOps.pad(
+                image,
+                (self.image_size, self.image_size),
+                color=tuple(int(x * 255) for x in self.image_transform.mean),
+            )
             images_list.append(self.image_transform(global_view))
 
             """process the local views"""
-            local_view = ImageOps.pad(image, (best_width, best_height),
-                                      color=tuple(int(x * 255) for x in self.image_transform.mean))
+            local_view = ImageOps.pad(
+                image,
+                (best_width, best_height),
+                color=tuple(int(x * 255) for x in self.image_transform.mean),
+            )
             for i in range(0, best_height, self.image_size):
                 for j in range(0, best_width, self.image_size):
                     images_list.append(
-                        self.image_transform(local_view.crop((j, i, j + self.image_size, i + self.image_size))))
+                        self.image_transform(
+                            local_view.crop(
+                                (j, i, j + self.image_size, i + self.image_size)
+                            )
+                        )
+                    )
 
             """record height / width crop num"""
-            num_width_tiles, num_height_tiles = best_width // self.image_size, best_height // self.image_size
+            num_width_tiles, num_height_tiles = (
+                best_width // self.image_size,
+                best_height // self.image_size,
+            )
             images_spatial_crop.append([num_width_tiles, num_height_tiles])
 
             """add image tokens"""
-            h = w = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            h = w = math.ceil(
+                (self.image_size // self.patch_size) / self.downsample_ratio
+            )
             # global views tokens h * (w + 1), 1 is for line seperator
             tokenized_image = [self.image_token_id] * h * (w + 1)
             # add a seperator between global and local views
             tokenized_image += [self.image_token_id]
             # local views tokens, (num_height_tiles * h) * (num_width_tiles * w + 1)
-            tokenized_image += [self.image_token_id] * (num_height_tiles * h) * (num_width_tiles * w + 1)
+            tokenized_image += (
+                [self.image_token_id]
+                * (num_height_tiles * h)
+                * (num_width_tiles * w + 1)
+            )
 
             tokenized_str += tokenized_image
             images_seq_mask += [True] * len(tokenized_image)
@@ -592,14 +667,21 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_seq_mask = images_seq_mask + [False]
 
         assert len(tokenized_str) == len(
-            images_seq_mask), f"tokenize_with_images func: tokenized_str's length {len(tokenized_str)} is not equal to imags_seq_mask's length {len(images_seq_mask)}"
+            images_seq_mask
+        ), f"tokenize_with_images func: tokenized_str's length {len(tokenized_str)} is not equal to imags_seq_mask's length {len(images_seq_mask)}"
 
-        return tokenized_str, images_list, images_seq_mask, images_spatial_crop, num_image_tokens
+        return (
+            tokenized_str,
+            images_list,
+            images_seq_mask,
+            images_spatial_crop,
+            num_image_tokens,
+        )
 
     def batchify(
-            self,
-            sample_list: List[VLChatProcessorOutput],
-            padding: Literal["left", "right"] = "left"
+        self,
+        sample_list: List[VLChatProcessorOutput],
+        padding: Literal["left", "right"] = "left",
     ) -> BatchCollateOutput:
         """
         Preprocesses the inputs for multimodal inference.
@@ -625,16 +707,30 @@ class DeepseekVLV2Processor(ProcessorMixin):
             #   Please note that with a fast tokenizer, using the `__call__` method is faster than
             #   using a method to encode the text followed by a call to the `pad` method to get a padded encoding.
             padded_input_ids = self.tokenizer.pad({"input_ids": batched_input_ids})
-            batched_input_ids, batched_attention_mask = padded_input_ids["input_ids"], padded_input_ids[
-                "attention_mask"].bool()
-            batched_labels = self.tokenizer.pad({"input_ids": batched_labels})["input_ids"]
-            batched_labels[batched_labels == self.pad_id] = self.ignore_id  # labels正常不会出现pad_id，无需额外保护
-            batched_images_seq_mask = self.tokenizer.pad({"input_ids": batched_images_seq_mask})["input_ids"]
+            batched_input_ids, batched_attention_mask = (
+                padded_input_ids["input_ids"],
+                padded_input_ids["attention_mask"].bool(),
+            )
+            batched_labels = self.tokenizer.pad({"input_ids": batched_labels})[
+                "input_ids"
+            ]
+            batched_labels[batched_labels == self.pad_id] = (
+                self.ignore_id
+            )  # labels正常不会出现pad_id，无需额外保护
+            batched_images_seq_mask = self.tokenizer.pad(
+                {"input_ids": batched_images_seq_mask}
+            )["input_ids"]
             batched_images_seq_mask[batched_images_seq_mask == self.pad_id] = False
         else:
-            batched_input_ids = pad_sequence(batched_input_ids, batch_first=True, padding_value=self.pad_id)
-            batched_labels = pad_sequence(batched_labels, batch_first=True, padding_value=self.ignore_id)
-            batched_images_seq_mask = pad_sequence(batched_images_seq_mask, batch_first=True, padding_value=0)
+            batched_input_ids = pad_sequence(
+                batched_input_ids, batch_first=True, padding_value=self.pad_id
+            )
+            batched_labels = pad_sequence(
+                batched_labels, batch_first=True, padding_value=self.ignore_id
+            )
+            batched_images_seq_mask = pad_sequence(
+                batched_images_seq_mask, batch_first=True, padding_value=0
+            )
             batched_attention_mask = batched_input_ids != self.pad_id
 
         """padding images to max_patch_num"""
@@ -644,20 +740,28 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images = sample["images"]
             n_pads = max_n_patches - images.shape[0]
             if n_pads > 0:
-                pad_images = torch.zeros((n_pads, *images.shape[1:]), dtype=images.dtype)
+                pad_images = torch.zeros(
+                    (n_pads, *images.shape[1:]), dtype=images.dtype
+                )
                 images = torch.cat([images, pad_images], dim=0)
             batched_images.append(images)
         batched_images = torch.stack(batched_images, dim=0)
 
         """padding images_spatial_crop to max_n_images"""
-        max_n_images = max(sample["images_spatial_crop"].shape[0] for sample in sample_list)
+        max_n_images = max(
+            sample["images_spatial_crop"].shape[0] for sample in sample_list
+        )
         batched_images_spatial_crop = []
         for sample in sample_list:
             images_spatial_crop = sample["images_spatial_crop"]
             n_pads = max_n_images - sample["images_spatial_crop"].shape[0]
             if n_pads > 0:
-                pad_images_spatial_crop = torch.full((n_pads, 2), 0, dtype=images_spatial_crop.dtype)
-                images_spatial_crop = torch.cat([images_spatial_crop, pad_images_spatial_crop], dim=0)
+                pad_images_spatial_crop = torch.full(
+                    (n_pads, 2), 0, dtype=images_spatial_crop.dtype
+                )
+                images_spatial_crop = torch.cat(
+                    [images_spatial_crop, pad_images_spatial_crop], dim=0
+                )
             batched_images_spatial_crop.append(images_spatial_crop)
         batched_images_spatial_crop = torch.stack(batched_images_spatial_crop, dim=0)
 
@@ -669,7 +773,7 @@ class DeepseekVLV2Processor(ProcessorMixin):
             images_seq_mask=batched_images_seq_mask,
             images_spatial_crop=batched_images_spatial_crop,
             sft_format=batched_sft_format,
-            seq_lens=seq_lens
+            seq_lens=seq_lens,
         )
 
         return batched_samples

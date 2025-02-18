@@ -24,7 +24,6 @@ from transformers import AutoModelForCausalLM
 import PIL.Image
 
 from deepseek_vl2.models import DeepseekVLV2ForCausalLM, DeepseekVLV2Processor
-from deepseek_vl2.serve.app_modules.utils import parse_ref_bbox
 
 
 def load_pil_images(conversations: List[Dict[str, str]]) -> List[PIL.Image.Image]:
@@ -141,17 +140,14 @@ def main(args):
             use_cache=True,
         )
 
-        print("-----------------")
-
         answer = tokenizer.decode(
             outputs[0][len(prepare_inputs.input_ids[0]) :].cpu().tolist(),
             skip_special_tokens=True,
         )
+        print("---")
+        print("answer:", answer)
+        print("---")
         print(f"{prepare_inputs['sft_format'][0]}", answer)
-
-        vg_image = parse_ref_bbox(answer, image=pil_images[-1])
-        if vg_image is not None:
-            vg_image.save("./vg.jpg", format="JPEG", quality=85)
 
 
 if __name__ == "__main__":
@@ -159,8 +155,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_path",
         type=str,
-        required=True,
-        default="deepseek-ai/deepseek-vl2",
+        # required=True,
+        default="deepseek-ai/deepseek-vl2-tiny",
         help="model name or local path to the model",
     )
     parser.add_argument(

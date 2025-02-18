@@ -31,10 +31,10 @@ from einops import repeat
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
+from transformers import GenerationMixin
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache
 from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask
-from transformers.models.llama.modeling_llama import LlamaAttention
 from transformers.modeling_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -57,7 +57,7 @@ from transformers.utils.import_utils import is_torch_fx_available
 
 from .configuration_deepseek import DeepseekV2Config
 
-from .llama_flash_attn import LlamaFlashAttention2
+from .modeling_llama import LlamaAttention, LlamaFlashAttention2
 
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -1300,7 +1300,6 @@ class DeepseekV2DecoderLayer(nn.Module):
             position_ids=position_ids,
             past_key_value=past_key_value,
             output_attentions=output_attentions,
-            use_cache=use_cache,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -1625,7 +1624,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         )
 
 
-class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
+class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
@@ -1768,7 +1767,7 @@ class DeepseekV2ForCausalLM(DeepseekV2PreTrainedModel):
             if isinstance(past_key_values, Cache):
                 cache_length = past_key_values.get_seq_length()
                 past_length = past_key_values.seen_tokens
-                max_cache_length = past_key_values.get_max_length()
+                max_cache_length = past_key_values.get_max_cache_shape()
             else:
                 cache_length = past_length = past_key_values[0][0].shape[2]
                 max_cache_length = None
